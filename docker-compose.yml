@@ -1,0 +1,18 @@
+services:
+  postgres:
+    container_name: postgres_container_rtap
+    hostname: postgres_container_rtap
+    image: postgres:alpine3.17
+    restart: always
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_DB: rtap_database
+      POSTGRES_USER: rtap_user
+      POSTGRES_PASSWORD: rtap_pass
+      PG-DATA: /data
+    volumes:
+      - db-postgres:/data
+
+volumes:
+  db-postgres: { }

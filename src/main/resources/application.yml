@@ -1,0 +1,3 @@
+spring:
+  application:
+    name: Event-Collector-Service
