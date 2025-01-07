@@ -8,11 +8,11 @@ plugins {
 	id 'checkstyle'
 }
 
-java {
-	toolchain {
-		languageVersion = JavaLanguageVersion.of(17)
-	}
+ext {
+	springCloudVersion = "2024.0.0"
 }
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 jacoco {
 	toolVersion = "0.8.12"
@@ -22,81 +22,97 @@ repositories {
 	mavenCentral()
 }
 
-ext {
-	set('springCloudVersion', "2024.0.0")
-}
-
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
+
 	implementation 'org.springframework.kafka:spring-kafka'
 	implementation 'org.springframework.boot:spring-boot-starter-log4j2'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 
 	implementation 'org.flywaydb:flyway-core'
-
-	implementation 'org.projectlombok:lombok:1.18.32'
-	annotationProcessor 'org.projectlombok:lombok:1.18.32'
+	runtimeOnly 'org.postgresql:postgresql'
 
 	implementation 'com.fasterxml.jackson.core:jackson-databind'
 
-	runtimeOnly 'org.postgresql:postgresql'
+	implementation 'org.projectlombok:lombok:1.18.32'
+	annotationProcessor 'org.projectlombok:lombok:1.18.32'
 }
 
+
+def commonDependencies = [
+		'org.springframework.boot:spring-boot-starter-test',
+		'org.projectlombok:lombok:1.18.32'
+]
+
+def addLombok = { dependencies ->
+	dependencies.implementation 'org.projectlombok:lombok:1.18.32'
+	dependencies.annotationProcessor 'org.projectlombok:lombok:1.18.32'
+}
+
+def configureSources = { suite, javaSrcDir, resourcesDir ->
+	suite.sources {
+		java { srcDirs = [javaSrcDir] }
+		resources { srcDirs = [resourcesDir] }
+	}
+}
 
 testing {
 	suites {
 		unit(JvmTestSuite) {
-			sources { java { srcDirs = ['src/test/unit/java'] } resources { srcDirs = ['src/test/unit/resources'] } }
+			configureSources(delegate, 'src/test/unit/java', 'src/test/unit/resources')
 			dependencies {
 				implementation project()
-				implementation 'org.springframework.boot:spring-boot-starter-test'
+				commonDependencies.each { implementation it }
 				implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-
 				implementation 'org.junit.jupiter:junit-jupiter-params:5.10.0'
-
-				implementation 'org.projectlombok:lombok:1.18.32'
-				annotationProcessor 'org.projectlombok:lombok:1.18.32'
+				addLombok(delegate)
 			}
 		}
 		integration(JvmTestSuite) {
-			sources { java { srcDirs = ['src/test/integration/java'] } resources { srcDirs = ['src/test/integration/resources'] } }
+			configureSources(delegate, 'src/test/integration/java', 'src/test/integration/resources')
 			dependencies {
 				implementation project()
-
-				implementation 'org.springframework.boot:spring-boot-starter-test'
+				commonDependencies.each { implementation it }
 				implementation 'org.springframework.boot:spring-boot-starter-web'
 				implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-
 				implementation 'org.testcontainers:postgresql:1.19.0'
 				implementation 'org.testcontainers:mockserver:1.19.0'
 				implementation 'org.testcontainers:junit-jupiter:1.19.0'
-
 				implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.0'
-
-				implementation 'org.projectlombok:lombok:1.18.32'
-				annotationProcessor 'org.projectlombok:lombok:1.18.32'
+				addLombok(delegate)
 			}
 		}
 		end2end(JvmTestSuite) {
-			sources { java { srcDirs = ['src/test/end2end/java'] } resources { srcDirs = ['src/test/end2end/resources'] } }
+			configureSources(delegate, 'src/test/end2end/java', 'src/test/end2end/resources')
 			dependencies {
 				implementation project()
-
-				implementation 'org.springframework.boot:spring-boot-starter-test'
-
+				commonDependencies.each { implementation it }
 				implementation 'org.testcontainers:junit-jupiter:1.19.0'
-
-				implementation "org.projectlombok:lombok:1.18.32"
-				annotationProcessor "org.projectlombok:lombok:1.18.32"
+				addLombok(delegate)
 			}
 		}
 	}
 }
 
-test {
-	useJUnitPlatform()
+def jacocoHtmlOutput = layout.buildDirectory.dir("jacocoHtml")
+def baseImage = "eclipse-temurin:17.0.6_10-jre-alpine"
+def outputImage = "${repository}/${serviceName}"
+
+tasks {
+	test {
+		useJUnitPlatform()
+		finalizedBy jacocoTestReport
+	}
+}
+
+tasks.getByName("integration") {
+	finalizedBy jacocoTestReport
+}
+
+tasks.getByName("end2end") {
+	dependsOn jibDockerBuild
 	finalizedBy jacocoTestReport
 }
 
@@ -105,30 +121,19 @@ jacocoTestReport {
 	reports {
 		xml.required.set(true)
 		html.required.set(true)
-		html.outputLocation.set(layout.buildDirectory.dir("jacocoHtml"))
+		html.outputLocation.set(jacocoHtmlOutput)
 	}
 }
 
-configurations {
-	all {
-		exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
-	}
-}
-
-tasks.named('integration') {
-	finalizedBy jacocoTestReport
-}
-
-tasks.named('end2end') {
-	dependsOn jibDockerBuild
-	finalizedBy jacocoTestReport
+configurations.all {
+	exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
 }
 
 jib {
-	to {
-		image = "${repository}/${serviceName}"
-	}
 	from {
-		image = "eclipse-temurin:17.0.6_10-jre-alpine"
+		image = baseImage
+	}
+	to {
+		image = outputImage
 	}
 }
